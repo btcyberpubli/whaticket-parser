@@ -398,6 +398,35 @@
         .title-main h1 {
             font-weight: 800;
             font-size: 48px;
+        }
+
+        .date-selector {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .date-selector select {
+            padding: 8px 12px;
+            border: 2px solid var(--primary-color);
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .date-selector select:hover {
+            background-color: rgba(102, 126, 234, 0.05);
+        }
+
+        .date-selector label {
+            margin-right: 10px;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
             margin-bottom: 10px;
             text-shadow: 0 2px 10px rgba(0,0,0,0.2);
         }
@@ -442,6 +471,20 @@
             <!-- Success Message -->
             <div class="success-message" id="successMessage">
                 <i class="fas fa-check-circle"></i> ¡Archivo procesado exitosamente!
+            </div>
+
+            <!-- Date Display Header -->
+            <div style="background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+                <h3 style="margin: 0; font-size: 24px; font-weight: 700;">
+                    📅 <span id="dateHeader"></span>
+                </h3>
+                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;" id="dateSubtitle"></p>
+            </div>
+
+            <!-- Date Selector -->
+            <div class="date-selector" id="dateSelector" style="display: none;">
+                <label for="dateSelect">📅 Selecciona otra fecha:</label>
+                <select id="dateSelect" onchange="cambiarFecha()"></select>
             </div>
 
             <!-- Statistics Section -->
@@ -489,6 +532,15 @@
                         <div class="json-output" id="rawOutput"></div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Send Button -->
+            <div style="text-align: center; margin-top: 30px;">
+                <button id="sendButton" class="btn btn-lg" 
+                    style="background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%); color: white; border: none; padding: 15px 40px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.3s;"
+                    onclick="enviarAlServidor()">
+                    <i class="fas fa-paper-plane"></i> Enviar a Servidor
+                </button>
             </div>
         </div>
     </div>
@@ -580,24 +632,140 @@
             }
         }
 
+        let panelData = []; // Guardar los datos de HOY
+        let hasDataToday = false;
+        let allDatesInCSV = [];
+
         function displayResults(result) {
-            const data = result.data;
+            console.log('displayResults llamado con:', result);
+            
+            if (!result) {
+                console.error('Resultado nulo');
+                errorMessage.textContent = '❌ Datos inválidos en respuesta';
+                errorMessage.style.display = 'block';
+                return;
+            }
+
+            hasDataToday = result.hasDataToday || false;
+            allDatesInCSV = result.allDatesFound || [];
+            panelData = result.data || [];
             const stats = result.statistics;
 
-            lastJsonData = JSON.stringify(data, null, 2);
-            lastRawData = JSON.stringify(result, null, 2);
+            console.log('hasDataToday:', hasDataToday);
+            console.log('allDatesInCSV:', allDatesInCSV);
+            console.log('panelData:', panelData);
 
-            // Display stats
-            displayStats(stats);
+            // VALIDACIÓN: Si NO hay datos de HOY
+            if (!hasDataToday) {
+                // Mostrar advertencia de fechas encontradas
+                let warningMsg = '⚠️ No hay datos para HOY (' + result.today + ')';
+                if (allDatesInCSV.length > 0) {
+                    warningMsg += '\n\nFechas encontradas en el CSV:\n' + allDatesInCSV.join('\n');
+                    errorMessage.textContent = warningMsg;
+                } else {
+                    errorMessage.textContent = '❌ El CSV no contiene datos válidos';
+                }
+                errorMessage.style.display = 'block';
+                
+                // Deshabilitar envío
+                document.getElementById('sendButton').disabled = true;
+                document.getElementById('sendButton').style.opacity = '0.5';
+                
+                resultsSection.classList.remove('show');
+                return;
+            }
+
+            // Si llegamos aquí, HAY datos de HOY ✅
+            console.log('Datos encontrados para HOY');
+
+            // Guardar datos completos para exportar
+            lastRawData = JSON.stringify(result, null, 2);
+            
+            // Mostrar datos
+            mostrarDatosDelDia();
+            resultsSection.classList.add('show');
+            successMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+            
+            // Habilitar envío
+            document.getElementById('sendButton').disabled = false;
+            document.getElementById('sendButton').style.opacity = '1';
+        }
+
+        function cambiarFecha() {
+            const dateSelect = document.getElementById('dateSelect');
+            currentDate = dateSelect.value;
+            mostrarDatosDelDia(currentDate);
+        }
+
+        function mostrarDatosDelDia() {
+            // El JSON exportado es simplemente el array de paneles de HOY
+            lastJsonData = JSON.stringify(panelData, null, 2);
 
             // Display JSON
             document.getElementById('jsonOutput').textContent = lastJsonData;
 
-            // Display raw data
+            // Display raw data (todos los datos incluyendo validación)
             document.getElementById('rawOutput').textContent = lastRawData;
 
-            // Display panels
-            displayPanels(data);
+            // Actualizar encabezado con fecha
+            const today = new Date().toISOString().split('T')[0];
+            const dateObj = new Date(today + 'T00:00:00');
+            const formattedDate = dateObj.toLocaleDateString('es-ES', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            const capitalizedDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+
+            // Calcular estadísticas del día
+            const statsDelDia = calcularEstadísticasDia(panelData, today);
+
+            document.getElementById('dateHeader').textContent = capitalizedDate;
+            document.getElementById('dateSubtitle').textContent = `Conversaciones del ${today}`;
+
+            // Mostrar estadísticas y paneles
+            displayStats(statsDelDia);
+            displayPanels(panelData);
+        }
+
+        function calcularEstadísticasDia(panelsData, date) {
+            if (!Array.isArray(panelsData) || panelsData.length === 0) {
+                return {
+                    total_conversaciones: 0,
+                    total_paneles: 0,
+                    total_campañas: 0,
+                    total_cargas: 0,
+                    paneles_top_3: [],
+                    fecha_actual: date
+                };
+            }
+
+            const totalCampañas = new Set();
+            let totalCargas = 0;
+            let totalMensajes = 0;
+
+            panelsData.forEach(panel => {
+                totalCargas += (panel.cargas || 0);
+                totalMensajes += (panel.total_mensajes || 0);
+                if (panel.campañas) {
+                    Object.keys(panel.campañas).forEach(camp => totalCampañas.add(camp));
+                }
+            });
+
+            return {
+                total_conversaciones: totalMensajes,
+                total_paneles: panelsData.length,
+                total_campañas: totalCampañas.size,
+                total_cargas: totalCargas,
+                paneles_top_3: panelsData.slice(0, 3).map(item => ({
+                    panel: item.panel,
+                    mensajes: item.total_mensajes,
+                    cargas: item.cargas
+                })),
+                fecha_actual: date
+            };
         }
 
         function displayStats(stats) {
@@ -678,8 +846,8 @@
             let panelsHtml = '';
 
             data.forEach(panel => {
-                const totalMensajes = panel.total_mensajes_hoy;
-                const totalCargas = panel.cargas_hoy;
+                const totalMensajes = panel.total_mensajes;
+                const totalCargas = panel.cargas;
 
                 let campanasHtml = '';
                 Object.entries(panel.campañas).forEach(([name, datos]) => {
@@ -737,6 +905,59 @@
             navigator.clipboard.writeText(lastRawData).then(() => {
                 alert('Datos copiados al portapapeles!');
             });
+        }
+
+        async function enviarAlServidor() {
+            if (!hasDataToday || panelData.length === 0) {
+                alert('❌ No hay datos de HOY para enviar');
+                return;
+            }
+
+            // Pedir ID para cada panel
+            const datosConID = [];
+            for (const panel of panelData) {
+                const panelID = prompt(`Ingresa el ID para el panel "${panel.panel}":`, '');
+                
+                if (panelID === null) {
+                    alert('❌ Envío cancelado - ID incompleto');
+                    return;
+                }
+
+                if (panelID.trim() === '') {
+                    alert(`❌ El ID para "${panel.panel}" no puede estar vacío`);
+                    return;
+                }
+
+                datosConID.push({
+                    ...panel,
+                    id: panelID
+                });
+            }
+
+            console.log('Datos a enviar:', datosConID);
+
+            try {
+                const response = await fetch('http://168.231.70.228:3010/api/paneles', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(datosConID)
+                });
+
+                const resultado = await response.json();
+                
+                if (resultado.success) {
+                    alert(`✅ ${resultado.paneles_guardados} paneles guardados exitosamente`);
+                    console.log('Respuesta del servidor:', resultado);
+                } else {
+                    alert(`❌ Error: ${resultado.error}`);
+                    console.error('Error:', resultado);
+                }
+            } catch (error) {
+                alert(`❌ Error al enviar: ${error.message}`);
+                console.error('Error:', error);
+            }
         }
     </script>
 </body>

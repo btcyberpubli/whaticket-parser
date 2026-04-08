@@ -27,32 +27,41 @@ const upload = multer({ storage: multer.memoryStorage() });
 // This ensures /process-csv is handled by our route, not by static file handler
 
 /**
- * Procesa los datos del CSV
+ * Procesa los datos del CSV - SOLO datos de HOY
+ * Retorna también información de todas las fechas encontradas
  */
 function processConversationData(rows) {
-  const panelsData = {};
-  const today = new Date().toDateString();
+  // Obtener HOY en formato YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
+  const dataToday = {}; // Agrupar paneles de HOY
+  const allDatesFound = new Set(); // Todas las fechas del CSV
 
   rows.forEach(row => {
     // Parsear fecha
-    const assignedAtStr = row.assignedAt || '';
-    const assignedDate = new Date(assignedAtStr);
+    const createdAtStr = row.createdAt || '';
+    const createdDate = new Date(createdAtStr);
     
-    if (isNaN(assignedDate.getTime())) {
+    if (isNaN(createdDate.getTime())) {
       return; // Saltar filas con fecha inválida
     }
 
-    const rowDate = assignedDate.toDateString();
+    // Extraer la fecha sin hora (YYYY-MM-DD)
+    const dateKey = createdDate.toISOString().split('T')[0];
+    allDatesFound.add(dateKey);
     
-    // Solo procesar conversaciones de hoy (o la fecha más reciente en los datos)
+    // SOLO procesar datos de HOY
+    if (dateKey !== today) {
+      return;
+    }
+    
     const department = (row.department || 'SIN_PANEL').trim();
     const connection = (row.connection || 'SIN_CAMPAÑA').trim();
     const tags = (row.conversationTags || '').trim();
 
-    // Inicializar panel
-    if (!panelsData[department]) {
-      panelsData[department] = {
-        id: Object.keys(panelsData).length.toString(),
+    // Inicializar panel para hoy si no existe
+    if (!dataToday[department]) {
+      dataToday[department] = {
+        id: '',
         panel: department,
         total_mensajes_hoy: 0,
         cargas_hoy: 0,
@@ -63,70 +72,84 @@ function processConversationData(rows) {
     }
 
     // Incrementar mensajes
-    panelsData[department].total_mensajes_hoy += 1;
+    dataToday[department].total_mensajes_hoy += 1;
 
     // Inicializar campaña si no existe
-    if (!panelsData[department].campañas[connection]) {
-      panelsData[department].campañas[connection] = {
+    if (!dataToday[department].campañas[connection]) {
+      dataToday[department].campañas[connection] = {
         mensajes: 0,
         cargas: 0
       };
     }
 
-    panelsData[department].campañas[connection].mensajes += 1;
+    dataToday[department].campañas[connection].mensajes += 1;
 
     // Contar carga si tiene tags
     if (tags && tags !== '' && tags !== 'nan') {
-      panelsData[department].cargas_hoy += 1;
-      panelsData[department].campañas[connection].cargas += 1;
+      dataToday[department].cargas_hoy += 1;
+      dataToday[department].campañas[connection].cargas += 1;
     }
   });
 
-  // Calcular porcentajes
-  const result = Object.values(panelsData).map(panel => {
+  // Convertir a array y calcular porcentajes
+  const panelsToday = Object.values(dataToday).map((panel, index) => {
     const total = panel.total_mensajes_hoy;
     const cargas = panel.cargas_hoy;
     const porcentaje = total > 0 ? ((cargas / total) * 100).toFixed(1) : '0.0';
     
     return {
-      ...panel,
-      porcentaje_carga: `${porcentaje}%`
+      id: '',
+      panel: panel.panel,
+      total_mensajes_hoy: total,
+      cargas_hoy: cargas,
+      porcentaje_carga: `${porcentaje}%`,
+      campañas: panel.campañas,
+      detalle_por_origen: panel.detalle_por_origen
     };
   });
 
-  // Ordenar por total_mensajes_hoy descendente
-  result.sort((a, b) => b.total_mensajes_hoy - a.total_mensajes_hoy);
+  // Ordenar paneles por total_mensajes_hoy descendente
+  panelsToday.sort((a, b) => b.total_mensajes_hoy - a.total_mensajes_hoy);
 
-  // Recalcular IDs después de ordenar
-  result.forEach((item, index) => {
+  // Asignar IDs secuenciales
+  panelsToday.forEach((item, index) => {
     item.id = index.toString();
   });
 
-  return result;
+  return {
+    panels: panelsToday,
+    allDatesFound: Array.from(allDatesFound).sort().reverse(),
+    hasDataToday: panelsToday.length > 0,
+    today: today
+  };
 }
 
 /**
- * Genera estadísticas
+ * Genera estadísticas para HOY
  */
 function generateStatistics(result, totalRows) {
+  const panelsToday = result.panels;
   const totalCampañas = new Set();
   let totalCargas = 0;
+  let totalMensajes = 0;
 
-  result.forEach(panel => {
+  panelsToday.forEach(panel => {
+    totalMensajes += panel.total_mensajes_hoy;
     totalCargas += panel.cargas_hoy;
     Object.keys(panel.campañas).forEach(camp => totalCampañas.add(camp));
   });
 
   return {
-    total_conversaciones: totalRows,
-    total_paneles: result.length,
+    total_conversaciones: totalMensajes,
+    total_paneles: panelsToday.length,
     total_campañas: totalCampañas.size,
     total_cargas: totalCargas,
-    paneles_top_3: result.slice(0, 3).map(item => ({
+    paneles_top_3: panelsToday.slice(0, 3).map(item => ({
       panel: item.panel,
       mensajes: item.total_mensajes_hoy,
       cargas: item.cargas_hoy
-    }))
+    })),
+    fecha_actual: result.today
   };
 }
 
@@ -158,7 +181,7 @@ app.post('/process-csv', upload.single('file'), (req, res) => {
             return res.status(400).json({ error: 'El archivo CSV está vacío' });
           }
 
-          const requiredColumns = ['assignedAt', 'connection', 'conversationTags', 'department'];
+          const requiredColumns = ['createdAt', 'connection', 'conversationTags', 'department'];
           const firstRow = rows[0];
           const actualColumns = Object.keys(firstRow);
           const missingColumns = requiredColumns.filter(col => !(col in firstRow));
@@ -169,13 +192,16 @@ app.post('/process-csv', upload.single('file'), (req, res) => {
             });
           }
 
-          // Procesar datos
-          const data = processConversationData(rows);
-          const statistics = generateStatistics(data, rows.length);
+          // Procesar datos - SOLO HOY
+          const result = processConversationData(rows);
+          const statistics = generateStatistics(result, rows.length);
 
           res.json({
             success: true,
-            data: data,
+            data: result.panels,
+            allDatesFound: result.allDatesFound,
+            hasDataToday: result.hasDataToday,
+            today: result.today,
             statistics: statistics,
             total_rows: rows.length
           });
