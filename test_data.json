@@ -1,0 +1,36 @@
+[
+  {
+    "id": "0",
+    "panel": "Panel Royal",
+    "total_mensajes_hoy": 4,
+    "cargas_hoy": 2,
+    "porcentaje_carga": "50.0%",
+    "campañas": {
+      "Reisenweaver Communications": { "mensajes": 2, "cargas": 1 },
+      "Other Campaign": { "mensajes": 2, "cargas": 1 }
+    },
+    "detalle_por_origen": [ "whaticket" ]
+  },
+  {
+    "id": "1",
+    "panel": "Panel Blue",
+    "total_mensajes_hoy": 2,
+    "cargas_hoy": 1,
+    "porcentaje_carga": "50.0%",
+    "campañas": {
+      "Other Campaign": { "mensajes": 2, "cargas": 1 }
+    },
+    "detalle_por_origen": [ "whaticket" ]
+  },
+  {
+    "id": "2",
+    "panel": "Panel Gold",
+    "total_mensajes_hoy": 1,
+    "cargas_hoy": 1,
+    "porcentaje_carga": "100.0%",
+    "campañas": {
+      "Reisenweaver Communications": { "mensajes": 1, "cargas": 1 }
+    },
+    "detalle_por_origen": [ "whaticket" ]
+  }
+]
