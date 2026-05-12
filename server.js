@@ -48,8 +48,10 @@ function processConversationData(rows) {
       return; // Saltar filas con fecha inválida
     }
 
-    // Extraer la fecha sin hora (YYYY-MM-DD)
-    const dateKey = createdDate.toISOString().split('T')[0];
+    // Extraer la fecha sin hora (YYYY-MM-DD) en zona horaria de Argentina
+    const arDate = new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const [d, m, y] = arDate.format(createdDate).split('/');
+    const dateKey = `${y}-${m}-${d}`;
     allDatesFound.add(dateKey);
     
     // SOLO procesar datos de HOY
