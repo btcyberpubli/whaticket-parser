@@ -26,16 +26,20 @@ const upload = multer({ storage: multer.memoryStorage() });
 // API Routes MUST come BEFORE static files
 // This ensures /process-csv is handled by our route, not by static file handler
 
+// Helper: Obtener fecha en zona horaria de Argentina (UTC-3)
+function getArgentinaDate(utcDate = new Date()) {
+  const offsetMs = 3 * 60 * 60 * 1000; // 3 horas en milisegundos
+  const arDate = new Date(utcDate.getTime() - offsetMs);
+  return arDate.toISOString().split('T')[0];
+}
+
 /**
  * Procesa los datos del CSV - SOLO datos de HOY
  * Retorna también información de todas las fechas encontradas
  */
 function processConversationData(rows) {
   // Obtener HOY en formato YYYY-MM-DD (Argentina UTC-3)
-  // Restar 3 horas porque el servidor está en UTC
-  const now = new Date();
-  now.setHours(now.getHours() - 3);
-  const today = now.toISOString().split('T')[0];
+  const today = getArgentinaDate();
   const dataToday = {}; // Agrupar paneles de HOY
   const allDatesFound = new Set(); // Todas las fechas del CSV
 
@@ -49,10 +53,7 @@ function processConversationData(rows) {
     }
 
     // Extraer la fecha sin hora (YYYY-MM-DD) en zona horaria de Argentina (UTC-3)
-    // Restar 3 horas porque el servidor está en UTC
-    const arDate = new Date(createdDate);
-    arDate.setHours(arDate.getHours() - 3);
-    const dateKey = arDate.toISOString().split('T')[0];
+    const dateKey = getArgentinaDate(createdDate);
     allDatesFound.add(dateKey);
     
     // SOLO procesar datos de HOY
