@@ -33,6 +33,15 @@ function getArgentinaDate(utcDate = new Date()) {
   return arDate.toISOString().split('T')[0];
 }
 
+// Helper: Parsear fecha del CSV (formato: "2026-05-11 11:43:11")
+function parseCSVDate(dateStr) {
+  if (!dateStr) return null;
+  // Reemplazar espacio con T para que sea ISO 8601
+  const isoStr = dateStr.replace(' ', 'T');
+  const date = new Date(isoStr);
+  return isNaN(date.getTime()) ? null : date;
+}
+
 /**
  * Procesa los datos del CSV - SOLO datos de HOY
  * Retorna también información de todas las fechas encontradas
@@ -44,11 +53,11 @@ function processConversationData(rows) {
   const allDatesFound = new Set(); // Todas las fechas del CSV
 
   rows.forEach(row => {
-    // Parsear fecha
+    // Parsear fecha con formato CSV: "2026-05-11 11:43:11"
     const createdAtStr = row.createdAt || '';
-    const createdDate = new Date(createdAtStr);
+    const createdDate = parseCSVDate(createdAtStr);
     
-    if (isNaN(createdDate.getTime())) {
+    if (!createdDate) {
       return; // Saltar filas con fecha inválida
     }
 
@@ -252,6 +261,20 @@ app.get('/health', (req, res) => {
  */
 app.post('/test', (req, res) => {
   res.json({ message: 'POST is working' });
+});
+
+/**
+ * Debug: Ver fechas calculadas
+ */
+app.get('/debug-date', (req, res) => {
+  const now = new Date();
+  const arDate = getArgentinaDate();
+  res.json({
+    utc_now: now.toISOString(),
+    argentina_date: arDate,
+    offset_hours: -3,
+    server_timezone: 'Vercel (UTC)'
+  });
 });
 
 /**
