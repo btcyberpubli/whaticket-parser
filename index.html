@@ -650,10 +650,12 @@
             allDatesInCSV = result.allDatesFound || [];
             panelData = result.data || [];
             const stats = result.statistics;
+            const serverDate = result.today; // ✅ Usar fecha del servidor (UTC-3 Argentina)
 
             console.log('hasDataToday:', hasDataToday);
             console.log('allDatesInCSV:', allDatesInCSV);
             console.log('panelData:', panelData);
+            console.log('serverDate:', serverDate); // Debug
 
             // VALIDACIÓN: Si NO hay datos de HOY
             if (!hasDataToday) {
@@ -682,7 +684,7 @@
             lastRawData = JSON.stringify(result, null, 2);
             
             // Mostrar datos
-            mostrarDatosDelDia();
+            mostrarDatosDelDia(serverDate, stats);  // ✅ Pasar fecha del servidor
             resultsSection.classList.add('show');
             successMessage.style.display = 'block';
             errorMessage.style.display = 'none';
@@ -698,7 +700,7 @@
             mostrarDatosDelDia(currentDate);
         }
 
-        function mostrarDatosDelDia() {
+        function mostrarDatosDelDia(serverDate, serverStats) {
             // El JSON exportado es simplemente el array de paneles de HOY
             lastJsonData = JSON.stringify(panelData, null, 2);
 
@@ -708,8 +710,8 @@
             // Display raw data (todos los datos incluyendo validación)
             document.getElementById('rawOutput').textContent = lastRawData;
 
-            // Actualizar encabezado con fecha
-            const today = new Date().toISOString().split('T')[0];
+            // Actualizar encabezado con fecha del SERVIDOR (UTC-3 Argentina) ✅
+            const today = serverDate; // Usar fecha del servidor en lugar de calcularla
             const dateObj = new Date(today + 'T00:00:00');
             const formattedDate = dateObj.toLocaleDateString('es-ES', { 
                 weekday: 'long', 
@@ -719,8 +721,8 @@
             });
             const capitalizedDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
 
-            // Calcular estadísticas del día
-            const statsDelDia = calcularEstadísticasDia(panelData, today);
+            // Calcular estadísticas del día (o usar las del servidor si disponibles)
+            const statsDelDia = serverStats || calcularEstadísticasDia(panelData, today);
 
             document.getElementById('dateHeader').textContent = capitalizedDate;
             document.getElementById('dateSubtitle').textContent = `Conversaciones del ${today}`;
