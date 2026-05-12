@@ -31,11 +31,11 @@ const upload = multer({ storage: multer.memoryStorage() });
  * Retorna también información de todas las fechas encontradas
  */
 function processConversationData(rows) {
-  // Obtener HOY en formato YYYY-MM-DD (zona horaria local, Argentina UTC-3)
+  // Obtener HOY en formato YYYY-MM-DD (Argentina UTC-3)
+  // Restar 3 horas porque el servidor está en UTC
   const now = new Date();
-  const ar = new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit' });
-  const [day, month, year] = ar.format(now).split('/');
-  const today = `${year}-${month}-${day}`;
+  now.setHours(now.getHours() - 3);
+  const today = now.toISOString().split('T')[0];
   const dataToday = {}; // Agrupar paneles de HOY
   const allDatesFound = new Set(); // Todas las fechas del CSV
 
@@ -48,10 +48,11 @@ function processConversationData(rows) {
       return; // Saltar filas con fecha inválida
     }
 
-    // Extraer la fecha sin hora (YYYY-MM-DD) en zona horaria de Argentina
-    const arDate = new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit' });
-    const [d, m, y] = arDate.format(createdDate).split('/');
-    const dateKey = `${y}-${m}-${d}`;
+    // Extraer la fecha sin hora (YYYY-MM-DD) en zona horaria de Argentina (UTC-3)
+    // Restar 3 horas porque el servidor está en UTC
+    const arDate = new Date(createdDate);
+    arDate.setHours(arDate.getHours() - 3);
+    const dateKey = arDate.toISOString().split('T')[0];
     allDatesFound.add(dateKey);
     
     // SOLO procesar datos de HOY
