@@ -746,8 +746,8 @@
             let totalMensajes = 0;
 
             panelsData.forEach(panel => {
-                totalCargas += (panel.cargas || 0);
-                totalMensajes += (panel.total_mensajes || 0);
+                totalCargas += (panel.cargas_hoy || 0);
+                totalMensajes += (panel.total_mensajes_hoy || 0);
                 if (panel.campañas) {
                     Object.keys(panel.campañas).forEach(camp => totalCampañas.add(camp));
                 }
@@ -760,8 +760,8 @@
                 total_cargas: totalCargas,
                 paneles_top_3: panelsData.slice(0, 3).map(item => ({
                     panel: item.panel,
-                    mensajes: item.total_mensajes,
-                    cargas: item.cargas
+                    mensajes: item.total_mensajes_hoy,
+                    cargas: item.cargas_hoy
                 })),
                 fecha_actual: date
             };
@@ -845,8 +845,8 @@
             let panelsHtml = '';
 
             data.forEach(panel => {
-                const totalMensajes = panel.total_mensajes;
-                const totalCargas = panel.cargas;
+                const totalMensajes = panel.total_mensajes_hoy;
+                const totalCargas = panel.cargas_hoy;
 
                 let campanasHtml = '';
                 Object.entries(panel.campañas).forEach(([name, datos]) => {
