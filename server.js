@@ -7,7 +7,7 @@ const fs = require('fs');
 const { Readable } = require('stream');
 
 const app = express();
-const port = 5000;
+const port = process.env.PORT || 5000;
 
 // Middleware - ORDER MATTERS!
 app.use(cors());
@@ -27,19 +27,40 @@ const upload = multer({ storage: multer.memoryStorage() });
 // This ensures /process-csv is handled by our route, not by static file handler
 
 // Helper: Obtener fecha en zona horaria de Argentina (UTC-3)
-function getArgentinaDate(utcDate = new Date()) {
-  const offsetMs = 3 * 60 * 60 * 1000; // 3 horas en milisegundos
-  const arDate = new Date(utcDate.getTime() - offsetMs);
-  return arDate.toISOString().split('T')[0];
+// Las fechas del CSV ya están en hora de Argentina, NO en UTC
+function getArgentinaDate(dateObj = null) {
+  let date;
+  
+  if (dateObj) {
+    // Si se pasa una fecha, se asume que está en UTC
+    // Se le restan 3 horas para convertir a Argentina
+    const offsetMs = 3 * 60 * 60 * 1000;
+    date = new Date(dateObj.getTime() - offsetMs);
+  } else {
+    // Si no se pasa fecha, usar ahora en Argentina
+    // Primero obtenemos UTC, luego restamos 3 horas
+    const utcNow = new Date();
+    const offsetMs = 3 * 60 * 60 * 1000;
+    date = new Date(utcNow.getTime() - offsetMs);
+  }
+  
+  return date.toISOString().split('T')[0];
 }
 
 // Helper: Parsear fecha del CSV (formato: "2026-05-11 11:43:11")
+// Las fechas del CSV YA están en zona horaria de Argentina, no en UTC
 function parseCSVDate(dateStr) {
   if (!dateStr) return null;
-  // Reemplazar espacio con T para que sea ISO 8601
-  const isoStr = dateStr.replace(' ', 'T');
-  const date = new Date(isoStr);
-  return isNaN(date.getTime()) ? null : date;
+  
+  // Formato: "2026-05-11 11:43:11" - ya es hora de Argentina
+  // Extraer solo la fecha YYYY-MM-DD
+  const datePart = dateStr.split(' ')[0];
+  
+  if (!datePart || !/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return null;
+  }
+  
+  return datePart; // Retornar directamente como string YYYY-MM-DD
 }
 
 /**
@@ -51,18 +72,21 @@ function processConversationData(rows) {
   const today = getArgentinaDate();
   const dataToday = {}; // Agrupar paneles de HOY
   const allDatesFound = new Set(); // Todas las fechas del CSV
+  
+  let totalRowsWithToday = 0;
+  let totalRowsProcessed = 0;
 
-  rows.forEach(row => {
+  rows.forEach((row, rowIndex) => {
+    totalRowsProcessed++;
+    
     // Parsear fecha con formato CSV: "2026-05-11 11:43:11"
     const createdAtStr = row.createdAt || '';
-    const createdDate = parseCSVDate(createdAtStr);
+    const dateKey = parseCSVDate(createdAtStr); // Retorna "2026-05-11" directamente
     
-    if (!createdDate) {
+    if (!dateKey) {
       return; // Saltar filas con fecha inválida
     }
 
-    // Extraer la fecha sin hora (YYYY-MM-DD) en zona horaria de Argentina (UTC-3)
-    const dateKey = getArgentinaDate(createdDate);
     allDatesFound.add(dateKey);
     
     // SOLO procesar datos de HOY
@@ -70,9 +94,18 @@ function processConversationData(rows) {
       return;
     }
     
+    totalRowsWithToday++;
+    
     const department = (row.department || 'SIN_PANEL').trim();
     const connection = (row.connection || 'SIN_CAMPAÑA').trim();
     const tags = (row.conversationTags || '').trim();
+    
+    const hasTag = tags && tags !== '' && tags !== 'nan';
+    
+    // Log de cada fila procesada (primeras 5 filas)
+    if (totalRowsWithToday <= 5) {
+      console.log(`   Row ${totalRowsWithToday}: fecha=${dateKey}, tags="${tags}" hasTag=${hasTag}`);
+    }
 
     // Inicializar panel para hoy si no existe
     if (!dataToday[department]) {
@@ -101,17 +134,26 @@ function processConversationData(rows) {
     dataToday[department].campañas[connection].mensajes += 1;
 
     // Contar carga si tiene tags
-    if (tags && tags !== '' && tags !== 'nan') {
+    if (hasTag) {
       dataToday[department].cargas_hoy += 1;
       dataToday[department].campañas[connection].cargas += 1;
     }
   });
+  
+  // Log de debugging
+  console.log(`\n🔍 Debug processConversationData:`);
+  console.log(`   Total rows en CSV: ${totalRowsProcessed}`);
+  console.log(`   Rows con fecha hoy (${today}): ${totalRowsWithToday}`);
+  console.log(`   Paneles procesados: ${Object.keys(dataToday).length}`);
 
   // Convertir a array y calcular porcentajes
   const panelsToday = Object.values(dataToday).map((panel, index) => {
     const total = panel.total_mensajes_hoy;
     const cargas = panel.cargas_hoy;
     const porcentaje = total > 0 ? ((cargas / total) * 100).toFixed(1) : '0.0';
+    
+    console.log(`   [${panel.panel}] Total: ${total}, Cargas: ${cargas}, %: ${porcentaje}%`);
+    
     
     return {
       id: '',
@@ -178,8 +220,16 @@ app.post('/process-csv', upload.single('file'), (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    // Eliminar BOM si existe
+    let csvContent = req.file.buffer.toString('utf-8');
+    if (csvContent.charCodeAt(0) === 0xFEFF) {
+      csvContent = csvContent.slice(1);
+    }
+    
+    console.log(`📥 CSV recibido: ${req.file.originalname}, tamaño: ${req.file.buffer.length} bytes`);
+    
     const rows = [];
-    const stream = Readable.from([req.file.buffer.toString('utf-8')]);
+    const stream = Readable.from([csvContent]);
     let responsesSent = false;
 
     stream
@@ -211,6 +261,15 @@ app.post('/process-csv', upload.single('file'), (req, res) => {
           // Procesar datos - SOLO HOY
           const result = processConversationData(rows);
           const statistics = generateStatistics(result, rows.length);
+          
+          console.log(`\n✅ Respuesta final:`);
+          console.log(`   Total filas CSV: ${rows.length}`);
+          console.log(`   Paneles encontrados: ${result.panels.length}`);
+          console.log(`   Estadísticas:`, {
+            total_conversaciones: statistics.total_conversaciones,
+            total_cargas: statistics.total_cargas,
+            porcentaje_general: result.panels.length > 0 ? ((statistics.total_cargas / statistics.total_conversaciones) * 100).toFixed(1) + '%' : 'N/A'
+          });
 
           res.json({
             success: true,
@@ -275,6 +334,45 @@ app.get('/debug-date', (req, res) => {
     offset_hours: -3,
     server_timezone: 'Vercel (UTC)'
   });
+});
+
+/**
+ * Debug: Procesar test_data.json
+ */
+app.get('/debug-process', (req, res) => {
+  try {
+    const testDataPath = path.join(__dirname, 'test_data.json');
+    if (!fs.existsSync(testDataPath)) {
+      return res.status(404).json({ error: 'test_data.json not found' });
+    }
+    
+    const testData = JSON.parse(fs.readFileSync(testDataPath, 'utf-8'));
+    console.log('\n🔍 Debug endpoint: procesando test_data.json');
+    console.log(`   Filas en test_data.json: ${testData.length}`);
+    
+    // Convertir a formato esperado
+    const rows = testData.map(item => ({
+      createdAt: item.createdAt || item.fecha || '',
+      department: item.department || item.panel || '',
+      connection: item.connection || item.campaña || '',
+      conversationTags: item.conversationTags || item.tags || ''
+    }));
+    
+    const result = processConversationData(rows);
+    const statistics = generateStatistics(result, rows.length);
+    
+    res.json({
+      success: true,
+      message: 'Test data processed',
+      data: result.panels,
+      statistics: statistics,
+      allDatesFound: result.allDatesFound,
+      today: result.today
+    });
+  } catch (error) {
+    console.error('Debug endpoint error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 /**
