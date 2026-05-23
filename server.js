@@ -80,7 +80,7 @@ function processConversationData(rows) {
     totalRowsProcessed++;
     
     // Parsear fecha con formato CSV: "2026-05-11 11:43:11"
-    const createdAtStr = row.createdAt || '';
+    const createdAtStr = row.firstSentMessageAt || '';
     const dateKey = parseCSVDate(createdAtStr); // Retorna "2026-05-11" directamente
     
     if (!dateKey) {
